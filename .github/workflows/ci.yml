@@ -33,5 +33,9 @@ jobs:
         with:
           python-version: "3.13"
           version: "0.12.19"
-      - name: Build source and wheel distributions
-        run: uv build --no-sources
+      - name: Install locked build dependencies
+        run: uv sync --locked
+      - name: Build with locked Hatchling
+        run: uv run --locked --no-sync uv build --no-sources --no-build-isolation
+      - name: Check distribution contents
+        run: uv run --locked --no-sync python scripts/check_distributions.py --dist-dir dist
