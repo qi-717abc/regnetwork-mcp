@@ -15,7 +15,7 @@ The repository owner/name must match the repository where this clean snapshot is
 ## Release sequence
 
 1. Update `src/regnetwork_mcp/__init__.py`, `CHANGELOG.md`, and the pinned install examples together. Confirm `pyproject.toml` reads the version from the Python package.
-2. Run `uv sync --locked`, `uv run python -m pytest -q`, `uv build --no-sources`, and `uv run python scripts/check_distributions.py`. Then run the current installed-wheel stdio acceptance from outside the source checkout.
+2. Run the exact locked workflow commands: `uv sync --locked`, `uv run --locked --no-sync python -m pytest -q`, `uv run --locked --no-sync uv build --no-sources --no-build-isolation`, and `uv run --locked --no-sync python scripts/check_distributions.py --dist-dir dist`. Verify both wheel and sdist installation and stdio startup from outside the source checkout with the MCP SDK client, using an explicit cache/export data root.
 3. Commit the release changes and create a matching tag such as `v0.1.0`.
 4. The release workflow tests and builds distributions, publishes them to TestPyPI, and then waits for approval at the GitHub `pypi` environment.
 5. Before approving production, install the TestPyPI package into a throwaway Python 3.13 environment, verify its version and start the MCP with an SDK client. Inspect the TestPyPI project page and build files. Approve the `pypi` environment only after those checks pass.
