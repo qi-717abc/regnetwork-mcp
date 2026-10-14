@@ -17,12 +17,14 @@ jobs:
         with:
           python-version: "3.13"
           version: "0.12.19"
-      - name: Install locked dependencies and test
-        run: |
-          uv sync --locked
-          uv run python -m pytest -q
-      - name: Build distributions
-        run: uv build --no-sources
+      - name: Install locked build and test dependencies
+        run: uv sync --locked
+      - name: Run offline test suite
+        run: uv run --locked --no-sync python -m pytest -q
+      - name: Build with locked Hatchling
+        run: uv run --locked --no-sync uv build --no-sources --no-build-isolation
+      - name: Check distribution contents
+        run: uv run --locked --no-sync python scripts/check_distributions.py --dist-dir dist
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-distributions
