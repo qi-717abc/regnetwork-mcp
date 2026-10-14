@@ -1,0 +1,991 @@
+{
+  "_meta": {
+    "io.modelcontextprotocol/serverInfo": {
+      "name": "RegNetwork Research",
+      "version": "0.1.0"
+    }
+  },
+  "ttlMs": 0,
+  "cacheScope": "private",
+  "nextCursor": null,
+  "tools": [
+    {
+      "name": "get_database_status",
+      "title": null,
+      "description": "检查线上统计接口、缓存、源统计一致性和当前工具能力。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "refresh": {
+            "default": false,
+            "title": "Refresh",
+            "type": "boolean"
+          }
+        },
+        "title": "get_database_statusArguments",
+        "additionalProperties": false
+      },
+      "execution": null,
+      "outputSchema": {
+        "properties": {
+          "status": {
+            "enum": [
+              "ok",
+              "empty",
+              "partial",
+              "error",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "coverage": {
+            "additionalProperties": true,
+            "title": "Coverage",
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "status",
+          "data",
+          "provenance",
+          "coverage"
+        ],
+        "title": "Envelope",
+        "type": "object"
+      },
+      "icons": null,
+      "annotations": {
+        "title": null,
+        "readOnlyHint": true,
+        "destructiveHint": null,
+        "idempotentHint": null,
+        "openWorldHint": true
+      },
+      "_meta": null
+    },
+    {
+      "name": "resolve_entities",
+      "title": null,
+      "description": "按完整名称查询来源实体候选；保留歧义和不完整结果，返回的 ID 可用于后续查询。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "species": {
+            "enum": [
+              "human",
+              "mouse"
+            ],
+            "title": "Species",
+            "type": "string"
+          },
+          "dataset": {
+            "enum": [
+              "core",
+              "complete"
+            ],
+            "title": "Dataset",
+            "type": "string"
+          },
+          "symbols": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Symbols",
+            "type": "array"
+          },
+          "refresh": {
+            "default": false,
+            "title": "Refresh",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "species",
+          "dataset",
+          "symbols"
+        ],
+        "title": "resolve_entitiesArguments",
+        "additionalProperties": false
+      },
+      "execution": null,
+      "outputSchema": {
+        "properties": {
+          "status": {
+            "enum": [
+              "ok",
+              "empty",
+              "partial",
+              "error",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "coverage": {
+            "additionalProperties": true,
+            "title": "Coverage",
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "status",
+          "data",
+          "provenance",
+          "coverage"
+        ],
+        "title": "Envelope",
+        "type": "object"
+      },
+      "icons": null,
+      "annotations": {
+        "title": null,
+        "readOnlyHint": true,
+        "destructiveHint": null,
+        "idempotentHint": null,
+        "openWorldHint": true
+      },
+      "_meta": null
+    },
+    {
+      "name": "search_interactions",
+      "title": null,
+      "description": "精确查询起点或终点；至少给出一端名称/已解析 ID。完整性仅针对当前名称候选查询，别名不保证穷尽。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "species": {
+            "enum": [
+              "human",
+              "mouse"
+            ],
+            "title": "Species",
+            "type": "string"
+          },
+          "dataset": {
+            "enum": [
+              "core",
+              "complete"
+            ],
+            "title": "Dataset",
+            "type": "string"
+          },
+          "regulator_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Regulator Symbol"
+          },
+          "target_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Target Symbol"
+          },
+          "regulator_entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Regulator Entity Id"
+          },
+          "target_entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Target Entity Id"
+          },
+          "regulator_type": {
+            "default": "all",
+            "enum": [
+              "all",
+              "TF",
+              "miRNA",
+              "lncRNA",
+              "circRNA"
+            ],
+            "title": "Regulator Type",
+            "type": "string"
+          },
+          "target_type": {
+            "default": "all",
+            "enum": [
+              "all",
+              "TF",
+              "miRNA",
+              "lncRNA",
+              "circRNA",
+              "Gene"
+            ],
+            "title": "Target Type",
+            "type": "string"
+          },
+          "confidence": {
+            "default": "all",
+            "enum": [
+              "all",
+              "high",
+              "medium",
+              "low"
+            ],
+            "title": "Confidence",
+            "type": "string"
+          },
+          "min_score": {
+            "anyOf": [
+              {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Min Score"
+          },
+          "limit": {
+            "default": 30,
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "refresh": {
+            "default": false,
+            "title": "Refresh",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "species",
+          "dataset"
+        ],
+        "title": "search_interactionsArguments",
+        "additionalProperties": false
+      },
+      "execution": null,
+      "outputSchema": {
+        "properties": {
+          "status": {
+            "enum": [
+              "ok",
+              "empty",
+              "partial",
+              "error",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "coverage": {
+            "additionalProperties": true,
+            "title": "Coverage",
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "status",
+          "data",
+          "provenance",
+          "coverage"
+        ],
+        "title": "Envelope",
+        "type": "object"
+      },
+      "icons": null,
+      "annotations": {
+        "title": null,
+        "readOnlyHint": true,
+        "destructiveHint": null,
+        "idempotentHint": null,
+        "openWorldHint": true
+      },
+      "_meta": null
+    },
+    {
+      "name": "get_neighbors",
+      "title": null,
+      "description": "查询一跳上游/下游，保留方向、来源和截断；陌生纯 ID 需先用名称解析。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "species": {
+            "enum": [
+              "human",
+              "mouse"
+            ],
+            "title": "Species",
+            "type": "string"
+          },
+          "dataset": {
+            "enum": [
+              "core",
+              "complete"
+            ],
+            "title": "Dataset",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Symbol"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Entity Id"
+          },
+          "direction": {
+            "default": "both",
+            "enum": [
+              "incoming",
+              "outgoing",
+              "both"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "refresh": {
+            "default": false,
+            "title": "Refresh",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "species",
+          "dataset"
+        ],
+        "title": "get_neighborsArguments",
+        "additionalProperties": false
+      },
+      "execution": null,
+      "outputSchema": {
+        "properties": {
+          "status": {
+            "enum": [
+              "ok",
+              "empty",
+              "partial",
+              "error",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "coverage": {
+            "additionalProperties": true,
+            "title": "Coverage",
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "status",
+          "data",
+          "provenance",
+          "coverage"
+        ],
+        "title": "Envelope",
+        "type": "object"
+      },
+      "icons": null,
+      "annotations": {
+        "title": null,
+        "readOnlyHint": true,
+        "destructiveHint": null,
+        "idempotentHint": null,
+        "openWorldHint": true
+      },
+      "_meta": null
+    },
+    {
+      "name": "extract_subnetwork",
+      "title": null,
+      "description": "提取输入名称集合内部的有向网络；返回 subnetwork_id、输入状态和最多30条预览，完整边用于导出。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "species": {
+            "enum": [
+              "human",
+              "mouse"
+            ],
+            "title": "Species",
+            "type": "string"
+          },
+          "dataset": {
+            "enum": [
+              "core",
+              "complete"
+            ],
+            "title": "Dataset",
+            "type": "string"
+          },
+          "symbols": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Symbols",
+            "type": "array"
+          },
+          "max_edges": {
+            "default": 5000,
+            "maximum": 5000,
+            "minimum": 1,
+            "title": "Max Edges",
+            "type": "integer"
+          },
+          "refresh": {
+            "default": false,
+            "title": "Refresh",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "species",
+          "dataset",
+          "symbols"
+        ],
+        "title": "extract_subnetworkArguments",
+        "additionalProperties": false
+      },
+      "execution": null,
+      "outputSchema": {
+        "properties": {
+          "status": {
+            "enum": [
+              "ok",
+              "empty",
+              "partial",
+              "error",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "coverage": {
+            "additionalProperties": true,
+            "title": "Coverage",
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "status",
+          "data",
+          "provenance",
+          "coverage"
+        ],
+        "title": "Envelope",
+        "type": "object"
+      },
+      "icons": null,
+      "annotations": {
+        "title": null,
+        "readOnlyHint": true,
+        "destructiveHint": null,
+        "idempotentHint": null,
+        "openWorldHint": true
+      },
+      "_meta": null
+    },
+    {
+      "name": "summarize_network",
+      "title": null,
+      "description": "计算已提取子网络的度数、角色组成、自环、连通性；结构地位不等于疾病驱动性。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subnetwork_id": {
+            "title": "Subnetwork Id",
+            "type": "string"
+          },
+          "include_self_loops": {
+            "default": true,
+            "title": "Include Self Loops",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "subnetwork_id"
+        ],
+        "title": "summarize_networkArguments",
+        "additionalProperties": false
+      },
+      "execution": null,
+      "outputSchema": {
+        "properties": {
+          "status": {
+            "enum": [
+              "ok",
+              "empty",
+              "partial",
+              "error",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "coverage": {
+            "additionalProperties": true,
+            "title": "Coverage",
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "status",
+          "data",
+          "provenance",
+          "coverage"
+        ],
+        "title": "Envelope",
+        "type": "object"
+      },
+      "icons": null,
+      "annotations": {
+        "title": null,
+        "readOnlyHint": true,
+        "destructiveHint": null,
+        "idempotentHint": null,
+        "openWorldHint": false
+      },
+      "_meta": null
+    },
+    {
+      "name": "get_interaction_evidence",
+      "title": null,
+      "description": "读取此前查询/映射取得的来源注释和 PMID；不抓取论文全文，不把缺失值变成证据。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "interaction_id": {
+            "title": "Interaction Id",
+            "type": "string"
+          },
+          "max_references": {
+            "default": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Max References",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "interaction_id"
+        ],
+        "title": "get_interaction_evidenceArguments",
+        "additionalProperties": false
+      },
+      "execution": null,
+      "outputSchema": {
+        "properties": {
+          "status": {
+            "enum": [
+              "ok",
+              "empty",
+              "partial",
+              "error",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "coverage": {
+            "additionalProperties": true,
+            "title": "Coverage",
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "status",
+          "data",
+          "provenance",
+          "coverage"
+        ],
+        "title": "Envelope",
+        "type": "object"
+      },
+      "icons": null,
+      "annotations": {
+        "title": null,
+        "readOnlyHint": true,
+        "destructiveHint": null,
+        "idempotentHint": null,
+        "openWorldHint": false
+      },
+      "_meta": null
+    },
+    {
+      "name": "export_network",
+      "title": null,
+      "description": "在专用目录创建可复算网络文件及校验清单，返回可读取的 MCP resource URI。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subnetwork_id": {
+            "title": "Subnetwork Id",
+            "type": "string"
+          },
+          "format": {
+            "enum": [
+              "tsv",
+              "json",
+              "graphml"
+            ],
+            "title": "Format",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subnetwork_id",
+          "format"
+        ],
+        "title": "export_networkArguments",
+        "additionalProperties": false
+      },
+      "execution": null,
+      "outputSchema": {
+        "properties": {
+          "status": {
+            "enum": [
+              "ok",
+              "empty",
+              "partial",
+              "error",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "coverage": {
+            "additionalProperties": true,
+            "title": "Coverage",
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "status",
+          "data",
+          "provenance",
+          "coverage"
+        ],
+        "title": "Envelope",
+        "type": "object"
+      },
+      "icons": null,
+      "annotations": {
+        "title": null,
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "_meta": null
+    }
+  ],
+  "resultType": "complete"
+}
