@@ -1,4 +1,4 @@
-"""Eight structured MCP tools and controlled research resources."""
+"""Structured MCP tools and controlled RegNetwork research resources."""
 from contextlib import asynccontextmanager
 import json
 import inspect
@@ -18,6 +18,8 @@ Dataset=Literal['core','complete']
 Limit=Annotated[int,Field(ge=1,le=500,strict=True)]
 Offset=Annotated[int,Field(ge=0,strict=True)]
 Symbols=Annotated[list[Annotated[str,Field(min_length=1,max_length=200)]],Field(min_length=1,max_length=50)]
+FileCategory=Literal['tf_target','mirna_target','lncrna_target','circrna_target','regulator_tf',
+    'regulator_mirna','regulator_lncrna','regulator_circrna','regulator_gene','regulator_target']
 
 
 def wire(value: Envelope):
@@ -92,10 +94,19 @@ def create_server(root: Path | None = None, *, service: ResearchService | None =
         """在专用目录创建可复算网络文件及校验清单，返回可读取的 MCP resource URI。"""
         return wire(await application.guard('export_network',{'subnetwork_id':subnetwork_id,'format':format},lambda:application.export(subnetwork_id,format)))
 
+    @server.tool(annotations=ToolAnnotations(read_only_hint=False,destructive_hint=False,idempotent_hint=False,open_world_hint=True))
+    async def download_official_file(species: Species,dataset: Dataset,file_category: FileCategory,
+        overwrite: bool=False) -> Envelope:
+        """下载 RegNetwork 官方下载页的一个 .7z 文件到本机 downloads/，写入 SHA-256 清单但不解压。每次仅下载一个官方清单项目，最大 8 GiB。"""
+        params={'species':species,'dataset':dataset,'file_category':file_category,'overwrite':overwrite}
+        return wire(await application.guard('download_official_file',params,
+            lambda:application.download_official_file(species,dataset,file_category,overwrite)))
+
     @server.resource('regnetwork://metadata',mime_type='application/json')
     def metadata() -> str:
         return json.dumps({'version':__version__,'tools':TOOLS,'transport':'stdio','source':'RegNetwork 2025 site label',
-                           'source_database_read_only':True,'whole_database_required':False,'cache_ttl_seconds':86400},ensure_ascii=False)
+                           'source_database_read_only':True,'whole_database_required':False,
+                           'official_file_download':True,'automatic_database_download':False,'cache_ttl_seconds':86400},ensure_ascii=False)
 
     @server.resource('regnetwork://schema',mime_type='application/json')
     def schema() -> str:
@@ -105,7 +116,8 @@ def create_server(root: Path | None = None, *, service: ResearchService | None =
     def limitations() -> str:
         return ('上游内部读取接口不具有已确认的稳定公开契约。分页完整性针对当前名称候选，别名不保证穷尽；'
                 '实体身份由来源声明，未作独立权威核实。缺失边不代表无生物学关系；score不是效应强度；'
-                '不含激活/抑制及组织疾病条件。PCA-CMI、富集和本地整库均未启用。'
+                '不含激活/抑制及组织疾病条件。可按需下载官方页面列出的单个压缩文件，但不自动下载或解压整库；'
+                '下载清单的 SHA-256 由本机计算，来源未提供校验和。PCA-CMI 和富集未启用。'
                 'offset分页间若取得数据不同，应核对provenance；已有artifact保留原结果，不表示新鲜查询。')
 
     @server.resource('regnetwork://exports/{artifact_id}',mime_type='application/octet-stream')
@@ -113,7 +125,8 @@ def create_server(root: Path | None = None, *, service: ResearchService | None =
         return application.read_export(artifact_id)
 
     allowed={fn.__name__:set(inspect.signature(fn).parameters) for fn in [get_database_status,resolve_entities,
-        search_interactions,get_neighbors,extract_subnetwork,summarize_network,get_interaction_evidence,export_network]}
+        search_interactions,get_neighbors,extract_subnetwork,summarize_network,get_interaction_evidence,export_network,
+        download_official_file]}
     async def strict_arguments(context,call_next):
         if context.method=='tools/call' and isinstance(context.params,dict):
             name=context.params.get('name')

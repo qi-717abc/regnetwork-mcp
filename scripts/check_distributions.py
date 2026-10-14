@@ -29,7 +29,7 @@ def main() -> None:
         metadata_path = next(name for name in names if name.endswith(".dist-info/METADATA"))
         metadata = BytesParser().parsebytes(wheel.read(metadata_path))
         assert metadata["Name"] == "regnetwork-mcp"
-        assert metadata["Version"] == "0.1.0"
+        assert metadata["Version"] == "0.2.0"
         assert metadata.get_content_type() == "text/plain"
         entrypoints = next(name for name in names if name.endswith(".dist-info/entry_points.txt"))
         assert "regnetwork-mcp = regnetwork_mcp.__main__:main" in wheel.read(entrypoints).decode()

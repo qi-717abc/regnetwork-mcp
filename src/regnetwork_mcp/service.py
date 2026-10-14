@@ -11,12 +11,14 @@ from pydantic import BaseModel, Field
 
 from .analysis import _node, extract_induced, resolve_scan, select_interactions, summarize_subnetwork
 from .cache import ResultCache
+from .downloads import OfficialDownloadError, OfficialFileDownloader
 from .exports import export_network
 from .records import parse_interaction
 from .upstream import OnlineAdapter, ReadObservation, UpstreamError, UpstreamFormatError
 
 TOOLS = ['get_database_status','resolve_entities','search_interactions','get_neighbors',
-         'extract_subnetwork','summarize_network','get_interaction_evidence','export_network']
+         'extract_subnetwork','summarize_network','get_interaction_evidence','export_network',
+         'download_official_file']
 
 
 class Envelope(BaseModel):
@@ -42,14 +44,17 @@ def valid_symbol(symbol: str) -> str:
 
 
 class ResearchService:
-    def __init__(self, root: Path, *, adapter: OnlineAdapter | None = None):
+    def __init__(self, root: Path, *, adapter: OnlineAdapter | None = None,
+                 downloader: OfficialFileDownloader | None = None):
         self.root=root.resolve()
         self.cache=ResultCache(self.root/'.runtime/results.sqlite')
         self.adapter=adapter or OnlineAdapter(cache=self.cache)
+        self.downloader=downloader or OfficialFileDownloader(self.root/'downloads')
         self.exports=self.root/'exports'
 
     async def close(self):
         await self.adapter.client.aclose()
+        await self.downloader.close()
 
     def envelope(self, data: dict[str,Any], parameters: dict[str,Any], observations=(), *, status='ok',warnings=(),coverage=None) -> Envelope:
         return Envelope(status=status,data=data,
@@ -67,7 +72,7 @@ class ResearchService:
     async def guard(self, operation: str, parameters: dict[str,Any], work) -> Envelope:
         try:
             return await work()
-        except (UpstreamError,UpstreamFormatError,ApplicationError,ValueError,FileNotFoundError,FileExistsError) as exc:
+        except (UpstreamError,UpstreamFormatError,OfficialDownloadError,ApplicationError,ValueError,FileNotFoundError,FileExistsError) as exc:
             return self.error(exc,{'operation':operation}|parameters)
 
     def _remember_records(self, records, species, dataset, observations):
@@ -237,6 +242,17 @@ class ResearchService:
         result=self.envelope(artifact,{'subnetwork_id':network_id,'format':format_name})
         result.provenance['original_network']=network['provenance']
         return result
+
+    async def download_official_file(self,species,dataset,file_category,overwrite=False):
+        receipt=await self.downloader.download(species,dataset,file_category,overwrite=overwrite)
+        data=asdict(receipt)
+        return Envelope(status='ok',data=data,
+            provenance={'provider':'RegNetwork','official_download_page':'https://www.zpliulab.cn/RegNetwork/download',
+                        'source_url':receipt.source_url,'retrieved_at':receipt.retrieved_at,
+                        'sha256':receipt.sha256,'sha256_origin':'computed_locally','upstream_checksum_provided':False},
+            coverage={'download_complete':True,'archive_extracted':False,'official_catalog_item':True,
+                      'biological_validation':'not_performed'},
+            warnings=['RegNetwork did not provide an upstream checksum; SHA-256 was computed locally.'])
 
     def read_export(self,identifier):
         if not re.fullmatch(r'[0-9a-f]{64}',identifier):

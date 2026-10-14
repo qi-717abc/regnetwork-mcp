@@ -1,8 +1,8 @@
 # RegNetwork MCP
 
-RegNetwork MCP 是一个**线上优先、只读**的本机 MCP 服务。Agent 在你的电脑上启动它；服务按需访问 RegNetwork 网站，不要求先下载整个数据库，也不会修改上游数据库。
+RegNetwork MCP 是一个**线上优先、只读**的本机 MCP 服务。Agent 在你的电脑上启动它；查询按需访问 RegNetwork 网站，不要求先下载整个数据库，也不会修改上游数据库。你也可以明确指定一个官方压缩文件让 MCP 下载到本机；它不会自动下载或解压文件。
 
-首发目标是 Windows、Python 3.13 和支持本机 stdio MCP 的客户端。首版提供 8 个科研数据工具：名称解析、调控关系查询、邻居查询、子网络提取与汇总、来源证据字段读取、状态查询，以及 TSV/JSON/GraphML 导出。
+首发目标是 Windows、Python 3.13 和支持本机 stdio MCP 的客户端。0.2.0 提供 9 个科研数据工具，包括名称解析、调控关系查询、子网络分析、结果导出，以及按需下载一个 RegNetwork 官方文件。
 
 > 软件工程测试只检查安装、接口和结果处理，不代表 RegNetwork 的生物学内容已由专家复核，也不构成实验或因果验证。
 
@@ -21,7 +21,7 @@ winget install --id=astral-sh.uv -e
 可先单独检查包能否启动：
 
 ```powershell
-uvx --python 3.13 --from regnetwork-mcp==0.1.0 regnetwork-mcp --version
+uvx --python 3.13 --from regnetwork-mcp==0.2.0 regnetwork-mcp --version
 ```
 
 ## 接入 Codex
@@ -29,11 +29,11 @@ uvx --python 3.13 --from regnetwork-mcp==0.1.0 regnetwork-mcp --version
 确认 Codex 命令行可用后，在 PowerShell 运行：
 
 ```powershell
-codex mcp add regnetwork -- uvx --python 3.13 --from regnetwork-mcp==0.1.0 regnetwork-mcp
+codex mcp add regnetwork -- uvx --python 3.13 --from regnetwork-mcp==0.2.0 regnetwork-mcp
 codex mcp list
 ```
 
-重启 Codex 桌面应用或重新打开会话，然后让 Agent 查询 RegNetwork MCP 的工具。上述命令固定使用 `0.1.0`，可以复现同一版服务。
+重启 Codex 桌面应用或重新打开会话，然后让 Agent 查询 RegNetwork MCP 的工具。上述命令固定使用 `0.2.0`，可以复现同一版服务。
 
 也可以把 [Codex TOML 示例](examples/codex-config.toml) 中的配置段加入 `%USERPROFILE%\.codex\config.toml` 的 `[mcp_servers.regnetwork]` 配置。
 
@@ -42,7 +42,7 @@ codex mcp list
 在要使用这个 MCP 的项目目录中打开 Claude Code 终端，然后运行：
 
 ```powershell
-claude mcp add --transport stdio --scope project regnetwork -- uvx --python 3.13 --from regnetwork-mcp==0.1.0 regnetwork-mcp
+claude mcp add --transport stdio --scope project regnetwork -- uvx --python 3.13 --from regnetwork-mcp==0.2.0 regnetwork-mcp
 claude mcp list
 ```
 
@@ -54,7 +54,7 @@ claude mcp list
 
 ## 更新与卸载
 
-更新时，把客户端配置中的 `regnetwork-mcp==0.1.0` 改成要使用的版本，再重启客户端。固定版本可以让同一分析流程继续使用同一 MCP 版本；不要在尚未确认新版本前删除旧版本记录。
+更新时，把客户端配置中的 `regnetwork-mcp==0.2.0` 改成要使用的版本，再重启客户端。固定版本可以让同一分析流程继续使用同一 MCP 版本；不要在尚未确认新版本前删除旧版本记录。
 
 从 Codex 移除：
 
@@ -82,8 +82,11 @@ claude mcp remove regnetwork
 | `summarize_network` | 汇总节点、边、类型、自环、度数和弱连通分量 |
 | `get_interaction_evidence` | 查看上游已有的来源、score、PMID、方法及缺失原因 |
 | `export_network` | 导出 TSV、JSON 或 GraphML，并生成可复现清单和校验值 |
+| `download_official_file` | 按物种、集合和文件类别下载一个官方 `.7z` 文件，并生成来源与校验清单 |
 
 一个常见分析顺序是：先用 `resolve_entities` 明确身份，再查询关系或提取子网络，查看结构与证据，最后导出结果。
+
+使用 `download_official_file` 时，必须从以下官方类别中选择一个：`tf_target`、`mirna_target`、`lncrna_target`、`circrna_target`、`regulator_tf`、`regulator_mirna`、`regulator_lncrna`、`regulator_circrna`、`regulator_gene`、`regulator_target`。`regulator_target` 对应官网该物种/集合最后一行的整组压缩包；选择它会下载一个可能较大的完整集合文件。其他类别只下载对应的分类文件。工具默认不覆盖同名文件，只有明确设置 `overwrite=true` 才替换；下载后不会自动解压。
 
 物种参数为 `human` 或 `mouse`；集合参数为 `core` 或 `complete`（对应网站的 all）。每次查询都应明确指定物种和集合。陌生 accession 需要先用名称解析取得本 MCP 的来源实体 ID。
 
@@ -97,29 +100,30 @@ claude mcp remove regnetwork
 - `error` 或 `unavailable` 表示操作失败，不能解释为“零关系”。
 - 来源记录包含访问时间、响应 hash 和 online/cache 标记。多个分页结果可能来自不同时间，不代表同一个原子数据库快照。
 
-工具保留物种、namespace/accession 和复合 ID；不会只凭相同符号合并 miRNA 前体与成熟体。来源缺少的分数、PMID 或类型不会被补造。来源 score 不是效应大小、激活/抑制方向或疾病因果证据。当前 MCP 不抓取论文全文、不修改源数据库、不提供全库镜像、富集、PCA-CMI 或本地数据库服务器管理。
+工具保留物种、namespace/accession 和复合 ID；不会只凭相同符号合并 miRNA 前体与成熟体。来源缺少的分数、PMID 或类型不会被补造。来源 score 不是效应大小、激活/抑制方向或疾病因果证据。MCP 不抓取论文全文、不修改源数据库、不自动下载数据。`download_official_file` 只能选择官网下载页列出的单个文件，包含官方的物种/集合整组压缩包；每个文件最多 8 GiB，下载后不解压。当前未实现富集、PCA-CMI 或本地数据库服务器管理。
 
 ## 数据来源与使用边界
 
-查询直接访问 [RegNetwork 官网](https://www.zpliulab.cn/RegNetwork/home) 的公开查询页面。来源版本标记和字段说明以其当时的响应为准。背景论文为 [RegNetwork 2025 论文](https://pmc.ncbi.nlm.nih.gov/articles/PMC12807656/)（DOI: 10.1093/nar/gkaf779；PMID: 40804431）。MCP 不下载整库，因此在线页面或服务变化可能影响查询。
+查询直接访问 [RegNetwork 官网](https://www.zpliulab.cn/RegNetwork/home) 的公开查询页面；官方文件下载仅使用 [RegNetwork 下载页](https://www.zpliulab.cn/RegNetwork/download) 列出的链接。来源版本标记和字段说明以其当时的响应为准。背景论文为 [RegNetwork 2025 论文](https://pmc.ncbi.nlm.nih.gov/articles/PMC12807656/)（DOI: 10.1093/nar/gkaf779；PMID: 40804431）。查询无需本地整库；选择下载官方整组压缩包是用户主动操作。
 
 RegNetwork 官网说明其数据用于学术研究，商业使用需联系维护者。本项目代码按 MIT 许可证发布，但这不授予上游数据库超出其自身条件的使用权。使用者应单独遵守上游数据条款。
 
 ## 缓存和导出位置
 
-服务只在本机保存小型查询缓存、已提取分析结果和用户请求的导出文件，不保存整库。默认位置：
+服务在本机保存小型查询缓存、已提取分析结果和用户请求的导出/下载文件。官方 `.7z` 文件保存在 `downloads/`，MCP 不会自动解压。默认数据目录：
 
 - Windows：`%LOCALAPPDATA%\RegNetworkMCP`
 - macOS/Linux：`$XDG_DATA_HOME/regnetwork-mcp`；未设置时为 `~/.local/share/regnetwork-mcp`
 - SQLite 缓存：数据目录下 `.runtime/results.sqlite`
 - 导出：数据目录下 `exports/`
+- 官方下载：数据目录下 `downloads/`，每个压缩包旁有 `.manifest.json` 来源清单
 
 如需换位置，在客户端的 MCP 环境变量中设置 `REGNETWORK_MCP_ROOT`。例如 Codex 配置：
 
 ```toml
 [mcp_servers.regnetwork]
 command = "uvx"
-args = ["--python", "3.13", "--from", "regnetwork-mcp==0.1.0", "regnetwork-mcp"]
+args = ["--python", "3.13", "--from", "regnetwork-mcp==0.2.0", "regnetwork-mcp"]
 env = { REGNETWORK_MCP_ROOT = "D:\\RegNetworkMCP" }
 ```
 

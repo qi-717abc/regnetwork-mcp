@@ -7,6 +7,7 @@ import pytest
 
 from regnetwork_mcp.server import create_server
 from regnetwork_mcp.service import ResearchService, TOOLS
+from regnetwork_mcp.downloads import OfficialFileDownloader, SEVEN_ZIP_MAGIC
 from regnetwork_mcp.upstream import OnlineAdapter
 
 
@@ -26,7 +27,7 @@ def transport(request):
 
 
 @pytest.mark.asyncio
-async def test_eight_actual_sdk_tools_and_all_formats_and_resource_readback(tmp_path):
+async def test_nine_actual_sdk_tools_and_all_formats_and_resource_readback(tmp_path):
     service=ResearchService(tmp_path,adapter=OnlineAdapter(transport=httpx.MockTransport(transport),interval=0))
     async with Client(create_server(service=service)) as client:
         listing=await client.list_tools()
@@ -61,6 +62,37 @@ async def test_eight_actual_sdk_tools_and_all_formats_and_resource_readback(tmp_
             assert hashlib.sha256(base64.b64decode(contents[0].blob)).hexdigest()==exported['data']['sha256']
         metadata=await client.read_resource('regnetwork://metadata')
         assert json.loads(metadata.contents[0].text)['whole_database_required'] is False
+
+
+@pytest.mark.asyncio
+async def test_official_download_is_a_bounded_mcp_tool_with_no_arbitrary_url(tmp_path):
+    archive=SEVEN_ZIP_MAGIC+b'fixture archive'
+    downloader=OfficialFileDownloader(tmp_path/'downloads',transport=httpx.MockTransport(
+        lambda request:httpx.Response(200,content=archive,headers={'Content-Type':'application/x-7z-compressed'})))
+    service=ResearchService(tmp_path,adapter=OnlineAdapter(transport=httpx.MockTransport(transport),interval=0),downloader=downloader)
+    async with Client(create_server(service=service)) as client:
+        tools={tool.name:tool for tool in (await client.list_tools()).tools}
+        assert set(tools)==set(TOOLS)
+        schema=tools['download_official_file'].input_schema
+        assert schema['properties']['file_category']['enum']==[
+            'tf_target','mirna_target','lncrna_target','circrna_target','regulator_tf',
+            'regulator_mirna','regulator_lncrna','regulator_circrna','regulator_gene','regulator_target']
+        assert tools['download_official_file'].annotations.read_only_hint is False
+        assert tools['download_official_file'].annotations.destructive_hint is False
+        result=await client.call_tool('download_official_file',{
+            'species':'human','dataset':'core','file_category':'tf_target'})
+        assert not result.is_error
+        data=result.structured_content
+        assert data['status']=='ok'
+        assert data['data']['filename']=='human_core_TF_Target.7z'
+        assert data['coverage']['download_complete'] is True
+        assert data['coverage']['archive_extracted'] is False
+        assert data['provenance']['upstream_checksum_provided'] is False
+        assert (tmp_path/'downloads'/'human_core_TF_Target.7z').read_bytes()==archive
+        arbitrary=await client.call_tool('download_official_file',{
+            'species':'human','dataset':'core','file_category':'tf_target','url':'https://attacker.invalid/'})
+        assert arbitrary.is_error
+        assert arbitrary.structured_content['error']['code']=='UNKNOWN_ARGUMENT'
 
 
 @pytest.mark.asyncio

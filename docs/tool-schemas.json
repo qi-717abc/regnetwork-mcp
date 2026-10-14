@@ -2,7 +2,7 @@
   "_meta": {
     "io.modelcontextprotocol/serverInfo": {
       "name": "RegNetwork Research",
-      "version": "0.1.0"
+      "version": "0.2.0"
     }
   },
   "ttlMs": 0,
@@ -983,6 +983,128 @@
         "destructiveHint": false,
         "idempotentHint": true,
         "openWorldHint": false
+      },
+      "_meta": null
+    },
+    {
+      "name": "download_official_file",
+      "title": null,
+      "description": "下载 RegNetwork 官方下载页的一个 .7z 文件到本机 downloads/，写入 SHA-256 清单但不解压。每次仅下载一个官方清单项目，最大 8 GiB。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "species": {
+            "enum": [
+              "human",
+              "mouse"
+            ],
+            "title": "Species",
+            "type": "string"
+          },
+          "dataset": {
+            "enum": [
+              "core",
+              "complete"
+            ],
+            "title": "Dataset",
+            "type": "string"
+          },
+          "file_category": {
+            "enum": [
+              "tf_target",
+              "mirna_target",
+              "lncrna_target",
+              "circrna_target",
+              "regulator_tf",
+              "regulator_mirna",
+              "regulator_lncrna",
+              "regulator_circrna",
+              "regulator_gene",
+              "regulator_target"
+            ],
+            "title": "File Category",
+            "type": "string"
+          },
+          "overwrite": {
+            "default": false,
+            "title": "Overwrite",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "species",
+          "dataset",
+          "file_category"
+        ],
+        "title": "download_official_fileArguments",
+        "additionalProperties": false
+      },
+      "execution": null,
+      "outputSchema": {
+        "properties": {
+          "status": {
+            "enum": [
+              "ok",
+              "empty",
+              "partial",
+              "error",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "coverage": {
+            "additionalProperties": true,
+            "title": "Coverage",
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "status",
+          "data",
+          "provenance",
+          "coverage"
+        ],
+        "title": "Envelope",
+        "type": "object"
+      },
+      "icons": null,
+      "annotations": {
+        "title": null,
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
       },
       "_meta": null
     }
