@@ -39,14 +39,16 @@ codex mcp list
 
 ## 接入 Claude Code
 
-在已安装 Claude Code 的终端里运行：
+在要使用这个 MCP 的项目目录中打开 Claude Code 终端，然后运行：
 
 ```powershell
-claude mcp add --transport stdio regnetwork -- uvx --python 3.13 --from regnetwork-mcp==0.1.0 regnetwork-mcp
+claude mcp add --transport stdio --scope project regnetwork -- uvx --python 3.13 --from regnetwork-mcp==0.1.0 regnetwork-mcp
 claude mcp list
 ```
 
-也可将 [Claude Code 项目配置示例](examples/mcp-config.json) 复制为项目根目录的 `.mcp.json`。打开 Claude Code 后，用 `/mcp` 检查连接。
+`--scope project` 会把配置写入当前项目根目录的 `.mcp.json`，方便把配置与项目一起复现。首次打开该项目时，Claude Code 会要求你审查并批准项目 MCP；批准后可运行 `/mcp` 检查连接。`claude mcp list` 若显示 `Pending approval`，表示还没完成这一步。
+
+若希望它在你电脑上的所有项目中都可用，把命令里的 `--scope project` 改为 `--scope user`。也可将 [Claude Code 项目配置示例](examples/mcp-config.json) 复制为项目根目录的 `.mcp.json`，再在 Claude Code 中审查并批准。
 
 其他能启动本机 stdio MCP 的 Agent，也可以参考这两份配置中的 `command` 和 `args`。客户端添加 MCP 的方式不完全相同，请以对应客户端的当前说明为准。
 

@@ -10,7 +10,7 @@ EXPECTED_ARGS = ["--python", "3.13", "--from", "regnetwork-mcp==0.1.0", "regnetw
 def test_claude_and_generic_stdio_example_uses_published_package_not_source_tree():
     config = json.loads((ROOT / "examples" / "mcp-config.json").read_text(encoding="utf-8"))
     server = config["mcpServers"]["regnetwork"]
-    assert server == {"command": "uvx", "args": EXPECTED_ARGS}
+    assert server == {"type": "stdio", "command": "uvx", "args": EXPECTED_ARGS}
     assert "Q:\\scbase" not in json.dumps(config)
 
 
