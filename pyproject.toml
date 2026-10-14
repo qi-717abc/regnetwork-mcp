@@ -29,7 +29,11 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8,<10", "pytest-asyncio>=0.24,<2"]
+dev = [
+    "hatchling>=1.27,<2",
+    "pytest>=8,<10",
+    "pytest-asyncio>=0.24,<2",
+]
 
 [project.scripts]
 regnetwork-mcp = "regnetwork_mcp.__main__:main"
