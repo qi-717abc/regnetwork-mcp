@@ -10,9 +10,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from .analysis import _node, extract_induced, resolve_scan, select_interactions, summarize_subnetwork
-from .cache import ResultCache
+from .cache import CacheError, ResultCache
 from .downloads import OfficialDownloadError, OfficialFileDownloader
 from .exports import export_network
+from .fileio import file_lock, recover_pair, run_sync
 from .records import parse_interaction
 from .upstream import OnlineAdapter, ReadObservation, UpstreamError, UpstreamFormatError
 
@@ -72,15 +73,27 @@ class ResearchService:
     async def guard(self, operation: str, parameters: dict[str,Any], work) -> Envelope:
         try:
             return await work()
-        except (UpstreamError,UpstreamFormatError,OfficialDownloadError,ApplicationError,ValueError,FileNotFoundError,FileExistsError) as exc:
+        except (UpstreamError,UpstreamFormatError,OfficialDownloadError,ApplicationError,CacheError,ValueError,FileNotFoundError,FileExistsError) as exc:
             return self.error(exc,{'operation':operation}|parameters)
+        except OSError as exc:
+            return self.error(ApplicationError('LOCAL_IO_ERROR', str(exc)), {'operation':operation}|parameters)
 
     def _remember_records(self, records, species, dataset, observations):
-        for record in records:
-            self.cache.put(ResultCache.key('interaction',record.interaction_id),
-                           {'raw':record.raw_record,'species':species,'dataset':dataset,'observations':[asdict(o) for o in observations]},namespace='interaction')
-            for entity in [record.regulator,record.target]:
-                self._remember_entity(_node(entity),species,dataset)
+        source_observations = [asdict(o) for o in observations]
+        entities = {}
+        with self.cache.batch():
+            for record in records:
+                self.cache.put(ResultCache.key('interaction',record.interaction_id),
+                               {'raw':record.raw_record,'species':species,'dataset':dataset,'observations':source_observations},namespace='interaction')
+                for entity in [record.regulator,record.target]:
+                    candidate = _node(entity)
+                    previous = entities.get(entity.entity_id)
+                    if previous is not None:
+                        candidate['symbols'] = sorted(set(candidate['symbols']) | set(previous['symbols']))
+                        candidate['source_types'] = sorted(set(candidate['source_types']) | set(previous['source_types']))
+                    entities[entity.entity_id] = candidate
+            for candidate in entities.values():
+                self._remember_entity(candidate,species,dataset)
 
     def _remember_entity(self,candidate,species,dataset):
         key=ResultCache.key('entity',[species,dataset,candidate['entity_id']])
@@ -93,9 +106,10 @@ class ResearchService:
 
     def _remember_resolution(self, resolution, species,dataset,observations=()):
         value=resolution|{'source_observations':[asdict(o) for o in observations]}
-        self.cache.put(ResultCache.key('resolution',[species,dataset,resolution['symbol']]),value,namespace='resolution')
-        for candidate in resolution['candidates']:
-            self._remember_entity(candidate,species,dataset)
+        with self.cache.batch():
+            self.cache.put(ResultCache.key('resolution',[species,dataset,resolution['symbol']]),value,namespace='resolution')
+            for candidate in resolution['candidates']:
+                self._remember_entity(candidate,species,dataset)
 
     def _selector(self,species,dataset,symbol,entity_id):
         self.adapter._scope(species,dataset)
@@ -113,6 +127,7 @@ class ResearchService:
 
     async def database_status(self,refresh=False):
         data,observation=await self.adapter.statistics(refresh=refresh)
+        cache_statistics = await run_sync(self.cache.statistics)
         checks=[]
         for species,series in data.items():
             labels=series['categories']
@@ -123,7 +138,7 @@ class ResearchService:
                 checks.append({'species':species,'series':name,'reported_edges':reported,'relation_category_sum':total,'consistent':reported==total})
         warnings=['UPSTREAM_STATISTICS_INCONSISTENT'] if any(not c['consistent'] for c in checks) else []
         return self.envelope({'upstream_available':True,'availability_checked_routes':[observation.route],
-                              'upstream_statistics':data,'statistics_checks':checks,'cache':self.cache.statistics(),
+                              'upstream_statistics':data,'statistics_checks':checks,'cache':cache_statistics,
                               'available_tools':TOOLS,'local_full_snapshot_loaded':False,'pca_cmi_available':False},
                              {'refresh':refresh},[observation],status='partial' if warnings else 'ok',warnings=warnings)
 
@@ -144,7 +159,7 @@ class ResearchService:
                 continue
             resolution=resolve_scan(scan,symbol)
             observations.extend(scan.observations)
-            self._remember_resolution(resolution,species,dataset,scan.observations)
+            await run_sync(self._remember_resolution,resolution,species,dataset,scan.observations)
             resolutions.append(resolution)
         incomplete=any(not r['candidate_scan_complete'] for r in resolutions)
         return self.envelope({'resolutions':resolutions},{'species':species,'dataset':dataset,'symbols':symbols,'refresh':refresh},observations,
@@ -154,31 +169,33 @@ class ResearchService:
     async def search(self,species,dataset,*,regulator_symbol=None,target_symbol=None,regulator_entity_id=None,target_entity_id=None,
                      regulator_type='all',target_type='all',confidence='all',min_score=None,limit=30,offset=0,refresh=False):
         source_given=regulator_symbol is not None or regulator_entity_id is not None
-        symbol=self._selector(species,dataset,regulator_symbol if source_given else target_symbol,
+        symbol=await run_sync(self._selector,species,dataset,regulator_symbol if source_given else target_symbol,
                               regulator_entity_id if source_given else target_entity_id)
         counterpart=target_symbol if source_given else regulator_symbol
         counterpart_id=target_entity_id if source_given else regulator_entity_id
         if counterpart_id:
-            counterpart=self._selector(species,dataset,counterpart,counterpart_id)
+            counterpart=await run_sync(self._selector,species,dataset,counterpart,counterpart_id)
         if counterpart is not None:
             counterpart=valid_symbol(counterpart)
         scan=await self.adapter.scan(species,dataset,symbol,regulator_type=regulator_type,target_type=target_type,confidence=confidence,refresh=refresh)
+        retained = []
         selected=select_interactions(scan,symbol=symbol,direction='outgoing' if source_given else 'incoming',
                                      entity_id=regulator_entity_id if source_given else target_entity_id,
-                                     counterpart_symbol=counterpart,counterpart_entity_id=counterpart_id,min_score=min_score,limit=limit,offset=offset)
-        resolution=resolve_scan(scan,symbol);self._remember_resolution(resolution,species,dataset,scan.observations)
-        self._remember_records([parse_interaction(r['raw_record'],species) for r in selected['records']],species,dataset,scan.observations)
+                                     counterpart_symbol=counterpart,counterpart_entity_id=counterpart_id,min_score=min_score,limit=limit,offset=offset,selected_records=retained)
+        await run_sync(self._remember_resolution,selected['resolution'],species,dataset,scan.observations)
+        await run_sync(self._remember_records,retained,species,dataset,scan.observations)
         parameters={'species':species,'dataset':dataset,'regulator_symbol':regulator_symbol,'target_symbol':target_symbol,
                     'regulator_entity_id':regulator_entity_id,'target_entity_id':target_entity_id,'min_score':min_score,
                     'regulator_type':regulator_type,'target_type':target_type,'confidence':confidence,'limit':limit,'offset':offset,'refresh':refresh}
         return self.envelope(selected,parameters,scan.observations,status=selected['status'],warnings=selected['warnings'])
 
     async def neighbors(self,species,dataset,*,symbol=None,entity_id=None,direction='both',limit=100,offset=0,refresh=False):
-        symbol=self._selector(species,dataset,symbol,entity_id)
+        symbol=await run_sync(self._selector,species,dataset,symbol,entity_id)
         scan=await self.adapter.scan(species,dataset,symbol,refresh=refresh)
-        selected=select_interactions(scan,symbol=symbol,entity_id=entity_id,direction=direction,limit=limit,offset=offset)
-        self._remember_resolution(resolve_scan(scan,symbol),species,dataset,scan.observations)
-        self._remember_records([parse_interaction(r['raw_record'],species) for r in selected['records']],species,dataset,scan.observations)
+        retained = []
+        selected=select_interactions(scan,symbol=symbol,entity_id=entity_id,direction=direction,limit=limit,offset=offset,selected_records=retained)
+        await run_sync(self._remember_resolution,selected['resolution'],species,dataset,scan.observations)
+        await run_sync(self._remember_records,retained,species,dataset,scan.observations)
         return self.envelope(selected,{'species':species,'dataset':dataset,'symbol':symbol,'entity_id':entity_id,'direction':direction,
                                        'limit':limit,'offset':offset,'refresh':refresh},scan.observations,status=selected['status'],warnings=selected['warnings'])
 
@@ -189,15 +206,16 @@ class ResearchService:
         for symbol in symbols:
             # Only use an explicit previous resolution, never infer known isolation from a zero matrix.
             key=ResultCache.key('resolution',[species,dataset,symbol])
-            hit=self.cache.get(key,allow_expired=True)
+            hit=await run_sync(self.cache.get,key,allow_expired=True)
             if hit is not None:resolutions[symbol]=hit.payload
-        network=extract_induced(records,symbols,resolutions=resolutions,max_edges=max_edges)
+        retained = []
+        network=await run_sync(extract_induced,records,symbols,resolutions=resolutions,max_edges=max_edges,selected_records=retained)
         parameters={'species':species,'dataset':dataset,'symbols':symbols,'mode':'induced','max_edges':max_edges,'refresh':refresh}
         network['provenance']={'query_parameters':parameters,'observations':[asdict(observation)],'source_release':'RegNetwork 2025 (site label)'}
-        network_id='subnetwork_'+ResultCache.key('subnetwork-v1',network)
-        if not self.cache.put(ResultCache.key('artifact',network_id),network,namespace='artifact'):
+        network_id='subnetwork_'+await run_sync(ResultCache.key,'subnetwork-v1',network)
+        if not await run_sync(self.cache.put,ResultCache.key('artifact',network_id),network,namespace='artifact'):
             raise ApplicationError('QUERY_TOO_LARGE','subnetwork exceeds local artifact budget')
-        self._remember_records([parse_interaction(r['raw_record'],species) for r in network['records']],species,dataset,[observation])
+        await run_sync(self._remember_records,retained,species,dataset,[observation])
         public={k:v for k,v in network.items() if k not in {'raw_records','records'}}
         public.update({'subnetwork_id':network_id,'record_preview':network['records'][:30],'record_preview_limit':30})
         return self.envelope(public,parameters,[observation],status='partial' if network['truncated'] else 'ok',warnings=network['warnings'])
@@ -210,15 +228,16 @@ class ResearchService:
         return hit.payload
 
     async def summarize(self,network_id,include_self_loops=True):
-        network=self._network(network_id)
-        result=self.envelope(summarize_subnetwork(network,include_self_loops=include_self_loops),{'subnetwork_id':network_id,'include_self_loops':include_self_loops},
+        network=await run_sync(self._network,network_id)
+        summary = await run_sync(summarize_subnetwork,network,include_self_loops=include_self_loops)
+        result=self.envelope(summary,{'subnetwork_id':network_id,'include_self_loops':include_self_loops},
                              status='partial' if network['truncated'] else 'ok',warnings=network['warnings'])
         result.provenance['original_network']=network['provenance']
         return result
 
     async def evidence(self,interaction_id,max_references=20):
         if not 1<=max_references<=100:raise ValueError('invalid reference limit')
-        hit=self.cache.get(ResultCache.key('interaction',interaction_id),allow_expired=True)
+        hit=await run_sync(self.cache.get,ResultCache.key('interaction',interaction_id),allow_expired=True)
         if hit is None:raise ApplicationError('EVIDENCE_UNAVAILABLE','read this interaction through a query or mapping first; no score or PMID is fabricated')
         record=parse_interaction(hit.payload['raw'],hit.payload['species'])
         data={'interaction_id':record.interaction_id,'regulator':asdict(record.regulator),'target':asdict(record.target),
@@ -235,8 +254,8 @@ class ResearchService:
                                        'biological_validation':'not_performed'})
 
     async def export(self,network_id,format_name):
-        network=self._network(network_id)
-        artifact=export_network(network,self.exports,format_name)
+        network=await run_sync(self._network,network_id)
+        artifact=await run_sync(export_network,network,self.exports,format_name)
         identifier=Path(artifact['path']).stem.removeprefix('regnetwork-')
         artifact['resource_uri']='regnetwork://exports/'+identifier
         result=self.envelope(artifact,{'subnetwork_id':network_id,'format':format_name})
@@ -261,12 +280,15 @@ class ResearchService:
         for format_name in ['tsv','json','graphml']:
             path=root/f'regnetwork-{identifier}.{format_name}'
             manifest=root/f'regnetwork-{identifier}.manifest.json'
-            if path.exists() and manifest.exists():
-                if not path.resolve().is_relative_to(root) or not manifest.resolve().is_relative_to(root):
-                    raise ApplicationError('EXPORT_PATH_INVALID','resource is outside configured export directory')
-                content=path.read_bytes()
-                expected=json.loads(manifest.read_text(encoding='utf-8'))
-                if hashlib.sha256(content).hexdigest()!=expected['sha256']:
-                    raise ApplicationError('EXPORT_INTEGRITY_ERROR','export was changed after creation')
-                return content
+            if root.exists():
+                with file_lock(path):
+                    recover_pair(path, manifest)
+                    if path.exists() and manifest.exists():
+                        if not path.resolve().is_relative_to(root) or not manifest.resolve().is_relative_to(root):
+                            raise ApplicationError('EXPORT_PATH_INVALID','resource is outside configured export directory')
+                        content=path.read_bytes()
+                        expected=json.loads(manifest.read_text(encoding='utf-8'))
+                        if hashlib.sha256(content).hexdigest()!=expected['sha256']:
+                            raise ApplicationError('EXPORT_INTEGRITY_ERROR','export was changed after creation')
+                        return content
         raise ApplicationError('ARTIFACT_NOT_FOUND','export file is absent')

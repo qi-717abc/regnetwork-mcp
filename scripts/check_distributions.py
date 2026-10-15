@@ -4,11 +4,12 @@ import argparse
 from pathlib import Path, PurePosixPath
 import tarfile
 import zipfile
+from regnetwork_mcp import __version__
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
-FORBIDDEN = {"research", ".runtime", ".cache", "exports", "tests", "AGENTS.md",
+FORBIDDEN = {"research", ".runtime", ".cache", "exports", "downloads", "tests", "AGENTS.md",
              "ACTION_LOG.md", "EXECUTION_PLAN.md", "uv.lock"}
 EXPECTED_SOURCE_FILES = {"README.md", "LICENSE", "CHANGELOG.md", "pyproject.toml",
                          ".gitignore", "PKG-INFO"}
@@ -29,7 +30,7 @@ def main() -> None:
         metadata_path = next(name for name in names if name.endswith(".dist-info/METADATA"))
         metadata = BytesParser().parsebytes(wheel.read(metadata_path))
         assert metadata["Name"] == "regnetwork-mcp"
-        assert metadata["Version"] == "0.2.0"
+        assert metadata["Version"] == __version__
         assert metadata.get_content_type() == "text/plain"
         entrypoints = next(name for name in names if name.endswith(".dist-info/entry_points.txt"))
         assert "regnetwork-mcp = regnetwork_mcp.__main__:main" in wheel.read(entrypoints).decode()

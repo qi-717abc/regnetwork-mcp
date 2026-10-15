@@ -12,6 +12,7 @@ dist/
 !.env.example
 .runtime/
 exports/
+downloads/
 data/
 research/regnetwork/raw/
 research/regnetwork/evidence/

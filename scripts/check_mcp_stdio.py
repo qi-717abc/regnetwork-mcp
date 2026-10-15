@@ -11,6 +11,7 @@ import sys
 
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters
+from regnetwork_mcp import __version__
 from regnetwork_mcp.service import TOOLS
 
 
@@ -23,6 +24,7 @@ async def main():
     parser.add_argument('--data-root',type=Path,default=root,help='REGNETWORK_MCP_ROOT for server cache and exports')
     parser.add_argument('--report',type=Path,default=root/'.runtime/verification/s07-stdio-live.json',help='where to save the protocol report')
     args=parser.parse_args()
+    args.cwd.mkdir(parents=True,exist_ok=True)
     report={'checked_at':datetime.now(timezone.utc).isoformat(),'kind':'actual_stdio_live_source',
             'command':args.command,'server_args':args.server_args or ['-m','regnetwork_mcp'],
             'server_cwd':str(args.cwd.resolve()),'data_root':str(args.data_root.resolve()),'calls':[]}
@@ -62,9 +64,28 @@ async def main():
                 assert hashlib.sha256(content).hexdigest()==artifact['data']['sha256']
                 report['export_readback'].append({'format':format_name,'sha256':artifact['data']['sha256'],'bytes':len(content),'passed':True})
             report['metadata']=(await client.read_resource('regnetwork://metadata')).model_dump(mode='json',by_alias=True)
+            metadata=json.loads(report['metadata']['contents'][0]['text'])
+            assert metadata['version']==__version__, metadata
+            report['version']=metadata['version']
             bad=await client.call_tool('get_database_status',{'unexpected_parameter':True})
             assert bad.is_error and bad.structured_content['error']['code']=='UNKNOWN_ARGUMENT'
             report['unknown_argument_rejected']=True
+            downloaded=await call('download_official_file',{'species':'human','dataset':'core','file_category':'tf_target'})
+            archive=Path(downloaded['data']['file_path']).read_bytes()
+            manifest=json.loads(Path(downloaded['data']['manifest_path']).read_text(encoding='utf-8'))
+            assert archive.startswith(b"7z\xbc\xaf'\x1c")
+            assert hashlib.sha256(archive).hexdigest()==downloaded['data']['sha256']==manifest['sha256']
+            assert manifest['upstream_checksum_provided'] is False
+            report['official_download_readback']={'passed':True,'bytes':len(archive),'sha256':manifest['sha256']}
+            report['scope_matrix']=[]
+            for species in ['human','mouse']:
+                for dataset in ['core','complete']:
+                    scoped=await call('extract_subnetwork',{'species':species,'dataset':dataset,
+                        'symbols':['TP53','BAX'] if species=='human' else ['Trp53','Bax'],'refresh':True})
+                    assert scoped['provenance']['query_parameters']['species']==species
+                    assert scoped['provenance']['query_parameters']['dataset']==dataset
+                    report['scope_matrix'].append({'species':species,'dataset':dataset,'status':scoped['status'],
+                        'records':scoped['data']['raw_record_count'],'truncated':scoped['data']['truncated']})
             report['passed']=True
             print(json.dumps({'passed':True,'nodes':summary['data']['node_count'],'edges':summary['data']['unique_endpoint_pair_count']}),flush=True)
     finally:

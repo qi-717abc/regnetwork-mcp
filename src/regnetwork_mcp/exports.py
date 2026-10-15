@@ -8,6 +8,7 @@ from typing import Any
 import networkx as nx
 
 from . import __version__
+from .fileio import file_lock, publish_pair, recover_pair, stage_bytes
 
 
 FIELDS = ["regulator_symbol", "regulator_id", "target_symbol", "target_id", "regulator_type", "target_type",
@@ -68,13 +69,20 @@ def export_network(network: dict[str, Any], output_dir: Path, format_name: str) 
                 "identity_policy": network["identity_policy"], "input_states": network["input_states"],
                 "provenance": network.get("provenance"), "score_is_not_effect_strength": True,
                 "activation_inhibition_sign_available": False}
-    for target, body in [(path, content), (manifest_path, _json(manifest))]:
-        if target.exists():
-            if target.read_bytes() != body:
+    manifest_bytes = _json(manifest)
+    with file_lock(path):
+        recover_pair(path, manifest_path)
+        for target, body in [(path, content), (manifest_path, manifest_bytes)]:
+            if target.exists() and target.read_bytes() != body:
                 raise FileExistsError("deterministic export path contains different data")
-        else:
-            temporary = target.with_suffix(target.suffix + ".tmp")
-            temporary.write_bytes(body)
-            temporary.replace(target)
+        if not path.exists() or not manifest_path.exists():
+            stages = []
+            try:
+                stages.append(stage_bytes(path, content))
+                stages.append(stage_bytes(manifest_path, manifest_bytes))
+                publish_pair(*stages, path, manifest_path)
+            finally:
+                for stage in stages:
+                    stage.unlink(missing_ok=True)
     return {"path": str(path), "resource_uri": path.as_uri(), "sha256": digest,
             "manifest_path": str(manifest_path), "bytes": len(content), "format": format_name}

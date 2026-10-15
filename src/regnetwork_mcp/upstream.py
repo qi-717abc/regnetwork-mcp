@@ -13,10 +13,12 @@ import httpx
 
 from .records import Interaction, UpstreamFormatError, parse_mapping_list, parse_query_page
 from .cache import ResultCache
+from .fileio import run_sync
 
 BASE_URL = "https://www.zpliulab.cn"
 ROUTES = {"/RegNetwork/query", "/RegNetwork/get_statistics", "/RegNetwork/run_grn_mapping"}
 RETRYABLE = {429, 502, 503, 504}
+MAX_RESPONSE_BYTES = 32 * 1024**2
 
 
 class UpstreamError(RuntimeError):
@@ -48,7 +50,12 @@ class ScanResult:
 class OnlineAdapter:
     def __init__(self, *, transport: httpx.AsyncBaseTransport | None = None,
                  interval: float = 1.0, clock: Callable[[], float] = time.monotonic,
-                 cache: ResultCache | None = None):
+                 cache: ResultCache | None = None, max_response_bytes: int = MAX_RESPONSE_BYTES,
+                 max_mapping_records: int = 100_000):
+        if max_response_bytes <= 0 or max_mapping_records <= 0:
+            raise ValueError('response budgets must be positive')
+        self.max_response_bytes = max_response_bytes
+        self.max_mapping_records = max_mapping_records
         self.client = httpx.AsyncClient(base_url=BASE_URL, transport=transport,
                                        timeout=httpx.Timeout(20, connect=5), follow_redirects=False)
         self.interval, self.clock = interval, clock
@@ -74,10 +81,14 @@ class OnlineAdapter:
             raise ValueError("route is not an approved read-only endpoint")
         if self.cache is not None and not refresh:
             key = ResultCache.key("online-v1", {"route": route, "parameters": parameters})
-            hit = self.cache.get(key)
+            hit = await run_sync(self.cache.get, key)
             if hit is not None:
                 try:
-                    content = base64.b64decode(hit.payload["body"], validate=True)
+                    if len(hit.payload['body']) > ((self.max_response_bytes+2)//3)*4:
+                        raise UpstreamError('UPSTREAM_SIZE_LIMIT', 'cached response exceeds the response byte budget')
+                    content = await run_sync(base64.b64decode, hit.payload["body"], validate=True)
+                    if len(content) > self.max_response_bytes:
+                        raise UpstreamError('UPSTREAM_SIZE_LIMIT', 'cached response exceeds the response byte budget')
                     observation = ReadObservation(**hit.payload["observation"])
                     if hashlib.sha256(content).hexdigest() != observation.sha256:
                         raise ValueError("response checksum does not match cached observation")
@@ -95,10 +106,23 @@ class OnlineAdapter:
                 self._last_request = self.clock()
                 try:
                     async with asyncio.timeout(max(0.001, deadline - self.clock())):
-                        if parameters is None:
-                            response = await self.client.get(route)
-                        else:
-                            response = await self.client.post(route, json=parameters)
+                        async with self.client.stream('GET' if parameters is None else 'POST', route,
+                                **({} if parameters is None else {'json': parameters})) as incoming:
+                            body = bytearray()
+                            if incoming.status_code == 200:
+                                length = incoming.headers.get('Content-Length', '')
+                                if (incoming.headers.get('Content-Encoding', 'identity').lower() == 'identity'
+                                        and length.isdecimal() and int(length) > self.max_response_bytes):
+                                    raise UpstreamError('UPSTREAM_SIZE_LIMIT', 'upstream response exceeds the response byte budget')
+                                async for chunk in incoming.aiter_bytes(64*1024):
+                                    if len(body)+len(chunk) > self.max_response_bytes:
+                                        raise UpstreamError('UPSTREAM_SIZE_LIMIT', 'upstream response exceeds the response byte budget')
+                                    body.extend(chunk)
+                            headers = dict(incoming.headers)
+                            # aiter_bytes() already decoded any HTTP content encoding.
+                            headers.pop('content-encoding', None)
+                            headers.pop('content-length', None)
+                            response = httpx.Response(incoming.status_code, headers=headers, content=bytes(body))
                 except (TimeoutError, httpx.TimeoutException) as exc:
                     raise UpstreamError("UPSTREAM_TIMEOUT", "upstream read timed out") from exc
                 except httpx.RequestError as exc:
@@ -126,7 +150,10 @@ class OnlineAdapter:
                                             hashlib.sha256(response.content).hexdigest(), response.status_code)
         raise AssertionError("retry loop exhausted")
 
-    def _remember(self, response: httpx.Response, observation: ReadObservation):
+    async def _remember(self, response: httpx.Response, observation: ReadObservation):
+        await run_sync(self._remember_sync, response, observation)
+
+    def _remember_sync(self, response: httpx.Response, observation: ReadObservation):
         if self.cache is None or observation.data_origin != "online":
             return
         key = ResultCache.key("online-v1", {"route": observation.route, "parameters": observation.parameters or None})
@@ -162,8 +189,8 @@ class OnlineAdapter:
                                   "searchSymbol": symbol.strip(), "page": page_index, "rowsPerPage": 150}
             try:
                 response, observation = await self._read("/RegNetwork/query", parameters, deadline, refresh=refresh)
-                page = parse_query_page(self._json(response), species)
-                self._remember(response, observation)
+                page = await run_sync(lambda: parse_query_page(self._json(response), species))
+                await self._remember(response, observation)
             except (UpstreamError, UpstreamFormatError) as exc:
                 if not result.observations:
                     raise
@@ -201,7 +228,7 @@ class OnlineAdapter:
                 counts = values.get(name)
                 if not isinstance(counts, list) or len(counts) != len(categories) or any(type(v) is not int or v < 0 for v in counts):
                     raise UpstreamFormatError("invalid statistics series")
-        self._remember(response, observation)
+        await self._remember(response, observation)
         return data, observation
 
     async def mapping(self, species: str, dataset: str, symbols: list[str], *, refresh: bool = False) -> tuple[tuple[Interaction, ...], ReadObservation]:
@@ -212,6 +239,6 @@ class OnlineAdapter:
         response, observation = await self._read("/RegNetwork/run_grn_mapping", parameters, self.clock() + 60, refresh=refresh)
         if "json" in response.headers.get("Content-Type", "").lower():
             raise UpstreamFormatError("mapping returned JSON rather than an edge list")
-        records = parse_mapping_list(response.text, species)
-        self._remember(response, observation)
+        records = await run_sync(parse_mapping_list, response.text, species, max_records=self.max_mapping_records)
+        await self._remember(response, observation)
         return records, observation

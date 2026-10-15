@@ -152,7 +152,16 @@ def parse_query_page(payload: Any, species: str) -> QueryPage:
     return QueryPage(records, count)
 
 
-def parse_mapping_list(text: str, species: str) -> tuple[Interaction, ...]:
+def parse_mapping_list(text: str, species: str, *, max_records: int = 100_000) -> tuple[Interaction, ...]:
     if not isinstance(text, str):
         raise UpstreamFormatError("expected text mapping result")
-    return tuple(parse_interaction(line, species) for line in text.splitlines() if line.strip())
+    records = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        if len(records) >= max_records:
+            error = UpstreamFormatError('mapping exceeds the response record budget')
+            error.code = 'UPSTREAM_RECORD_LIMIT'
+            raise error
+        records.append(parse_interaction(line, species))
+    return tuple(records)

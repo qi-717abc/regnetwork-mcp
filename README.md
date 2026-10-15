@@ -2,7 +2,7 @@
 
 RegNetwork MCP 是一个**线上优先、只读**的本机 MCP 服务。Agent 在你的电脑上启动它；查询按需访问 RegNetwork 网站，不要求先下载整个数据库，也不会修改上游数据库。你也可以明确指定一个官方压缩文件让 MCP 下载到本机；它不会自动下载或解压文件。
 
-首发目标是 Windows、Python 3.13 和支持本机 stdio MCP 的客户端。0.2.0 提供 9 个科研数据工具，包括名称解析、调控关系查询、子网络分析、结果导出，以及按需下载一个 RegNetwork 官方文件。
+首发目标是 Windows、Python 3.13 和支持本机 stdio MCP 的客户端。0.2.1 提供 9 个科研数据工具，包括名称解析、调控关系查询、子网络分析、结果导出，以及按需下载一个 RegNetwork 官方文件。
 
 > 软件工程测试只检查安装、接口和结果处理，不代表 RegNetwork 的生物学内容已由专家复核，也不构成实验或因果验证。
 
@@ -21,7 +21,7 @@ winget install --id=astral-sh.uv -e
 可先单独检查包能否启动：
 
 ```powershell
-uvx --python 3.13 --from regnetwork-mcp==0.2.0 regnetwork-mcp --version
+uvx --python 3.13 --from regnetwork-mcp==0.2.1 regnetwork-mcp --version
 ```
 
 ## 接入 Codex
@@ -29,11 +29,11 @@ uvx --python 3.13 --from regnetwork-mcp==0.2.0 regnetwork-mcp --version
 确认 Codex 命令行可用后，在 PowerShell 运行：
 
 ```powershell
-codex mcp add regnetwork -- uvx --python 3.13 --from regnetwork-mcp==0.2.0 regnetwork-mcp
+codex mcp add regnetwork -- uvx --python 3.13 --from regnetwork-mcp==0.2.1 regnetwork-mcp
 codex mcp list
 ```
 
-重启 Codex 桌面应用或重新打开会话，然后让 Agent 查询 RegNetwork MCP 的工具。上述命令固定使用 `0.2.0`，可以复现同一版服务。
+重启 Codex 桌面应用或重新打开会话，然后让 Agent 查询 RegNetwork MCP 的工具。上述命令固定使用 `0.2.1`，可以复现同一版服务。
 
 也可以把 [Codex TOML 示例](examples/codex-config.toml) 中的配置段加入 `%USERPROFILE%\.codex\config.toml` 的 `[mcp_servers.regnetwork]` 配置。
 
@@ -42,7 +42,7 @@ codex mcp list
 在要使用这个 MCP 的项目目录中打开 Claude Code 终端，然后运行：
 
 ```powershell
-claude mcp add --transport stdio --scope project regnetwork -- uvx --python 3.13 --from regnetwork-mcp==0.2.0 regnetwork-mcp
+claude mcp add --transport stdio --scope project regnetwork -- uvx --python 3.13 --from regnetwork-mcp==0.2.1 regnetwork-mcp
 claude mcp list
 ```
 
@@ -54,7 +54,7 @@ claude mcp list
 
 ## 更新与卸载
 
-更新时，把客户端配置中的 `regnetwork-mcp==0.2.0` 改成要使用的版本，再重启客户端。固定版本可以让同一分析流程继续使用同一 MCP 版本；不要在尚未确认新版本前删除旧版本记录。
+更新时，把客户端配置中的 `regnetwork-mcp==0.2.1` 改成要使用的版本，再重启客户端。固定版本可以让同一分析流程继续使用同一 MCP 版本；不要在尚未确认新版本前删除旧版本记录。
 
 从 Codex 移除：
 
@@ -123,11 +123,13 @@ RegNetwork 官网说明其数据用于学术研究，商业使用需联系维护
 ```toml
 [mcp_servers.regnetwork]
 command = "uvx"
-args = ["--python", "3.13", "--from", "regnetwork-mcp==0.2.0", "regnetwork-mcp"]
+args = ["--python", "3.13", "--from", "regnetwork-mcp==0.2.1", "regnetwork-mcp"]
 env = { REGNETWORK_MCP_ROOT = "D:\\RegNetworkMCP" }
 ```
 
 缓存默认有效 24 小时，最多保留 7 天，缓存载荷上限为 50 MiB。`refresh: true` 会重新访问线上；访问失败不会静默返回过期缓存。清理缓存不会删除导出文件。
+
+0.2.1 为线上查询增加单响应 32 MiB（HTTP 解码后）和 mapping 100,000 条记录的资源上限。超限会明确返回错误，不会把截断结果描述成完整结果；官方文件下载仍使用独立的 8 GiB 上限。下载与导出支持跨进程互斥和异常中断后的恢复。
 
 ## 开发与验收
 

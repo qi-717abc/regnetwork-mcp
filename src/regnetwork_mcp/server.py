@@ -12,6 +12,7 @@ from pydantic import Field
 from . import __version__
 from .paths import resolve_data_root
 from .service import ApplicationError, Envelope, ResearchService, TOOLS
+from .fileio import run_sync
 
 Species=Literal['human','mouse']
 Dataset=Literal['core','complete']
@@ -121,8 +122,8 @@ def create_server(root: Path | None = None, *, service: ResearchService | None =
                 'offset分页间若取得数据不同，应核对provenance；已有artifact保留原结果，不表示新鲜查询。')
 
     @server.resource('regnetwork://exports/{artifact_id}',mime_type='application/octet-stream')
-    def export_resource(artifact_id: str) -> bytes:
-        return application.read_export(artifact_id)
+    async def export_resource(artifact_id: str) -> bytes:
+        return await run_sync(application.read_export,artifact_id)
 
     allowed={fn.__name__:set(inspect.signature(fn).parameters) for fn in [get_database_status,resolve_entities,
         search_interactions,get_neighbors,extract_subnetwork,summarize_network,get_interaction_evidence,export_network,

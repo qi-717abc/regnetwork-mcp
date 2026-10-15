@@ -40,7 +40,8 @@ def resolve_scan(scan: ScanResult, symbol: str) -> dict[str, Any]:
 def select_interactions(scan: ScanResult, *, symbol: str, direction: str = "both",
                         entity_id: str | None = None, counterpart_symbol: str | None = None,
                         counterpart_entity_id: str | None = None,
-                        min_score: float | None = None, limit: int = 30, offset: int = 0) -> dict[str, Any]:
+                        min_score: float | None = None, limit: int = 30, offset: int = 0,
+                        selected_records: list[Interaction] | None = None) -> dict[str, Any]:
     if direction not in {"incoming", "outgoing", "both"}:
         raise ValueError("invalid direction")
     if not 1 <= limit <= 500 or offset < 0:
@@ -50,13 +51,13 @@ def select_interactions(scan: ScanResult, *, symbol: str, direction: str = "both
     selected: list[Interaction] = []
     missing_scores = 0
     warnings = list(scan.warnings)
+    def matches(entity: Entity) -> bool:
+        return entity.entity_id == entity_id if entity_id else entity.symbol == symbol
+    def counterpart_matches(entity: Entity) -> bool:
+        if counterpart_entity_id is not None:
+            return entity.entity_id == counterpart_entity_id
+        return counterpart_symbol is None or entity.symbol == counterpart_symbol
     for record in scan.records:
-        def matches(entity: Entity) -> bool:
-            return entity.entity_id == entity_id if entity_id else entity.symbol == symbol
-        def counterpart_matches(entity: Entity) -> bool:
-            if counterpart_entity_id is not None:
-                return entity.entity_id == counterpart_entity_id
-            return counterpart_symbol is None or entity.symbol == counterpart_symbol
         outgoing = matches(record.regulator) and counterpart_matches(record.target)
         incoming = matches(record.target) and counterpart_matches(record.regulator)
         if not ((direction in {"outgoing", "both"} and outgoing) or (direction in {"incoming", "both"} and incoming)):
@@ -70,6 +71,8 @@ def select_interactions(scan: ScanResult, *, symbol: str, direction: str = "both
         selected.append(record)
     # Preserve upstream order and record multiplicity, not a fabricated canonical dedup.
     returned = selected[offset:offset + limit]
+    if selected_records is not None:
+        selected_records.extend(returned)
     fully_filtered = scan.complete and missing_scores == 0
     truncated = len(selected) > offset + len(returned) or not fully_filtered
     if missing_scores:
@@ -91,13 +94,16 @@ def select_interactions(scan: ScanResult, *, symbol: str, direction: str = "both
 
 
 def extract_induced(records: list[Interaction] | tuple[Interaction, ...], symbols: list[str], *,
-                    resolutions: dict[str, dict[str, Any]] | None = None, max_edges: int = 5000) -> dict[str, Any]:
+                    resolutions: dict[str, dict[str, Any]] | None = None, max_edges: int = 5000,
+                    selected_records: list[Interaction] | None = None) -> dict[str, Any]:
     symbols = list(dict.fromkeys(s.strip() for s in symbols))
     if not 1 <= len(symbols) <= 50 or any(not s for s in symbols) or not 1 <= max_edges <= 5000:
         raise ValueError("invalid subnetwork bounds")
     names = set(symbols)
     qualified = [r for r in records if r.regulator.symbol in names and r.target.symbol in names]
     kept = qualified[:max_edges]
+    if selected_records is not None:
+        selected_records.extend(kept)
     nodes: dict[str, dict[str, Any]] = {}
     for record in kept:
         for entity in [record.regulator, record.target]:
